@@ -1,10 +1,14 @@
 package main
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 func main() {
@@ -13,6 +17,26 @@ func main() {
 	standardizedPath := filepath.ToSlash(path) + "/"
 	fmt.Println()
 
+	// hash-object --stdin
+	if len(arguments) == 3 && arguments[1] == "hash-object" && arguments[2] == "--stdin" {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Printf("failed to read data: %v", err)
+			return
+		}
+
+		size := len(data)
+		header := fmt.Sprintf("blob %s%c", strconv.Itoa(size), 0)
+		content := header + string(data)
+		hash := sha1.New()
+		hash.Write([]byte(content))
+		hashedData := hash.Sum(nil)
+		hashedString := hex.EncodeToString(hashedData)
+		fmt.Println(hashedString)
+		os.Exit(0)
+	}
+
+	// init
 	if len(arguments) == 2 && arguments[1] == "init" {
 
 		if _, err := os.Stat(".git"); err == nil {
