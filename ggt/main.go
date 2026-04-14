@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/zlib"
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
@@ -17,23 +19,9 @@ func main() {
 	standardizedPath := filepath.ToSlash(path) + "/"
 	fmt.Println()
 
-	// hash-object --stdin
-	if len(arguments) == 3 && arguments[1] == "hash-object" && arguments[2] == "--stdin" {
-		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			fmt.Printf("failed to read data: %v", err)
-			return
-		}
-
-		size := len(data)
-		header := fmt.Sprintf("blob %s%c", strconv.Itoa(size), 0)
-		content := header + string(data)
-		hash := sha1.New()
-		hash.Write([]byte(content))
-		hashedData := hash.Sum(nil)
-		hashedString := hex.EncodeToString(hashedData)
-		fmt.Println(hashedString)
-		os.Exit(0)
+	// hash-object
+	if len(arguments) >= 1 && arguments[1] == "hash-object" {
+		runHashObjectCommand(arguments)
 	}
 
 	// init
@@ -75,4 +63,45 @@ func main() {
 
 	fmt.Println("Unknown command")
 	os.Exit(1)
+}
+
+func runHashObjectCommand(arguments []string) {
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		fmt.Printf("failed to read data: %v", err)
+		return
+	}
+
+	saveFile := len(arguments) == 4 && arguments[2] == "-w"
+
+	size := len(data)
+	header := fmt.Sprintf("blob %s%c", strconv.Itoa(size), 0)
+	content := header + string(data)
+	hash := sha1.New()
+	hash.Write([]byte(content))
+	hashedData := hash.Sum(nil)
+	hashedString := hex.EncodeToString(hashedData)
+	folderName := hashedString[0:2]
+	fileName := hashedString[2:]
+
+	if saveFile {
+		// create the directory for the blob
+		if err := os.Mkdir(".git/objects/"+folderName, os.ModePerm); err != nil {
+			log.Fatal(err)
+			os.Exit(1)
+		}
+
+		// compress the content using zlib and save the file
+		var buffer bytes.Buffer
+		w := zlib.NewWriter(&buffer)
+		w.Write([]byte(content))
+		w.Close()
+		if err := os.WriteFile(".git/objects/"+folderName+"/"+fileName, buffer.Bytes(), 0666); err != nil {
+			log.Fatal(err)
+			os.Exit(1)
+		}
+	}
+
+	fmt.Println(hashedString)
+	os.Exit(0)
 }
