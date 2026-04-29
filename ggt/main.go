@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 func main() {
@@ -22,6 +23,11 @@ func main() {
 	// hash-object
 	if len(arguments) >= 1 && arguments[1] == "hash-object" {
 		runHashObjectCommand(arguments)
+	}
+
+	// cat-file
+	if len(arguments) >= 1 && arguments[1] == "cat-file" {
+		runCatFileCommand(arguments)
 	}
 
 	// init
@@ -63,6 +69,45 @@ func main() {
 
 	fmt.Println("Unknown command")
 	os.Exit(1)
+}
+
+func runCatFileCommand(arguments []string) {
+	if len(arguments) != 4 || arguments[2] != "-p" {
+		return
+	}
+	h := arguments[3]
+	folderName := h[0:2]
+	fileName := h[2:]
+	fullPath := filepath.Join(".git/objects", folderName, fileName)
+
+	var contents []byte
+	var err error
+	contents, err = os.ReadFile(fullPath)
+
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	r, err := zlib.NewReader(bytes.NewReader(contents))
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	buf := new(strings.Builder)
+	_, err = io.Copy(buf, r)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	uncompressedContents := buf.String()
+	contentsWithoutHeader := strings.Split(uncompressedContents, "\x00")[1]
+
+	r.Close()
+	fmt.Println(contentsWithoutHeader)
+	os.Exit(0)
 }
 
 func runHashObjectCommand(arguments []string) {
