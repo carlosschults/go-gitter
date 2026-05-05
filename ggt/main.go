@@ -72,9 +72,10 @@ func main() {
 }
 
 func runCatFileCommand(arguments []string) {
-	if len(arguments) != 4 || arguments[2] != "-p" {
+	if len(arguments) != 4 {
 		return
 	}
+
 	h := arguments[3]
 	folderName := h[0:2]
 	fileName := h[2:]
@@ -103,10 +104,21 @@ func runCatFileCommand(arguments []string) {
 	}
 
 	uncompressedContents := buf.String()
-	contentsWithoutHeader := strings.Split(uncompressedContents, "\x00")[1]
+	parts := strings.Split(uncompressedContents, "\x00")
+	flag := arguments[2]
+	var result string
+
+	switch flag {
+	case "-p":
+		result = parts[1]
+	case "-t":
+		result = strings.Fields(parts[0])[0]
+	case "-s":
+		result = strings.Fields(parts[0])[1]
+	}
 
 	r.Close()
-	fmt.Println(contentsWithoutHeader)
+	fmt.Println(result)
 	os.Exit(0)
 }
 
