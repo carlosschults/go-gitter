@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/zlib"
 	"crypto/sha1"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -28,6 +29,11 @@ func main() {
 	// cat-file
 	if len(arguments) >= 1 && arguments[1] == "cat-file" {
 		runCatFileCommand(arguments)
+	}
+
+	// update-index
+	if len(arguments) >= 1 && arguments[1] == "update-index" {
+		runUpdateIndexCommand(arguments)
 	}
 
 	// init
@@ -160,5 +166,56 @@ func runHashObjectCommand(arguments []string) {
 	}
 
 	fmt.Println(hashedString)
+	os.Exit(0)
+}
+
+func runUpdateIndexCommand(arguments []string) {
+
+	if len(arguments) != 4 {
+		return
+	}
+
+	if arguments[2] != "--add" {
+		return
+	}
+
+	// TODO improve variable names
+	dataToSave := []byte{}
+	var err error
+
+	// appending DIRC
+	dataToSave, err = binary.Append(dataToSave, binary.BigEndian, []byte("DIRC"))
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	// appending version number (2)
+	bs := make([]byte, 4)
+	binary.BigEndian.PutUint32(bs, 2)
+
+	dataToSave, err = binary.Append(dataToSave, binary.BigEndian, bs)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	// appending the number of entries (1)
+	bs2 := make([]byte, 4)
+	binary.BigEndian.PutUint32(bs2, 1)
+
+	dataToSave, err = binary.Append(dataToSave, binary.BigEndian, bs2)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	if err = os.WriteFile(".git/index", dataToSave, 0666); err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	// for the time being, I'm going to completely ignore
+	// the file being passed, and just write the header with a single entry
 	os.Exit(0)
 }
