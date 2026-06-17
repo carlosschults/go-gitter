@@ -128,6 +128,15 @@ func runCatFileCommand(arguments []string) {
 	os.Exit(0)
 }
 
+func hashData(data []byte, objectType string) (string, []byte) {
+	size := len(data)
+	header := fmt.Sprintf("%s %s%c", objectType, strconv.Itoa(size), 0)
+	contentToBeHashed := header + string(data)
+	hash := sha1.New()
+	hash.Write([]byte(contentToBeHashed))
+	return contentToBeHashed, hash.Sum(nil)
+}
+
 func runHashObjectCommand(arguments []string) {
 	data, err := io.ReadAll(os.Stdin)
 	if err != nil {
@@ -137,12 +146,7 @@ func runHashObjectCommand(arguments []string) {
 
 	saveFile := len(arguments) == 4 && arguments[2] == "-w"
 
-	size := len(data)
-	header := fmt.Sprintf("blob %s%c", strconv.Itoa(size), 0)
-	content := header + string(data)
-	hash := sha1.New()
-	hash.Write([]byte(content))
-	hashedData := hash.Sum(nil)
+	unhashedContent, hashedData := hashData(data, "blob")
 	hashedString := hex.EncodeToString(hashedData)
 	folderName := hashedString[0:2]
 	fileName := hashedString[2:]
@@ -157,7 +161,7 @@ func runHashObjectCommand(arguments []string) {
 		// compress the content using zlib and save the file
 		var buffer bytes.Buffer
 		w := zlib.NewWriter(&buffer)
-		w.Write([]byte(content))
+		w.Write([]byte(unhashedContent))
 		w.Close()
 		if err := os.WriteFile(".git/objects/"+folderName+"/"+fileName, buffer.Bytes(), 0666); err != nil {
 			log.Fatal(err)
@@ -201,21 +205,101 @@ func runUpdateIndexCommand(arguments []string) {
 	}
 
 	// appending the number of entries (1)
-	bs2 := make([]byte, 4)
-	binary.BigEndian.PutUint32(bs2, 1)
+	dataToSave, err = append4ByteBigEndianInteger(dataToSave, 1)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
 
+	// let's append several pieces of information that will be mostly zeroed-out
+	dataToSave, err = append4ByteBigEndianInteger(dataToSave, 0)     // ctime seconds
+	dataToSave, err = append4ByteBigEndianInteger(dataToSave, 0)     // ctime nanoseconds
+	dataToSave, err = append4ByteBigEndianInteger(dataToSave, 0)     // mtime seconds
+	dataToSave, err = append4ByteBigEndianInteger(dataToSave, 0)     // mtime nanoseconds
+	dataToSave, err = append4ByteBigEndianInteger(dataToSave, 0)     // dev
+	dataToSave, err = append4ByteBigEndianInteger(dataToSave, 0)     // ino
+	dataToSave, err = append4ByteBigEndianInteger(dataToSave, 33188) // mode
+	dataToSave, err = append4ByteBigEndianInteger(dataToSave, 0)     // uid
+	dataToSave, err = append4ByteBigEndianInteger(dataToSave, 0)     // gid
+
+	// append file size
+	filePath := arguments[3]
+	fi, err := os.Lstat(filePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	size := fi.Size()
+	dataToSave, err = append4ByteBigEndianInteger(dataToSave, size) // size
+
+	contents, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	// append the hash
+	_, hash := hashData(contents, "blob")
+	dataToSave, err = binary.Append(dataToSave, binary.BigEndian, hash)
+
+	// flags
+	bs2 := make([]byte, 2)
+	binary.BigEndian.PutUint16(bs2, uint16(len(filePath)))
 	dataToSave, err = binary.Append(dataToSave, binary.BigEndian, bs2)
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
 
-	if err = os.WriteFile(".git/index", dataToSave, 0666); err != nil {
+	// filename bytes
+	dataToSave, err = binary.Append(dataToSave, binary.BigEndian, []byte(filePath+string(0)))
+	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
 
-	// for the time being, I'm going to completely ignore
-	// the file being passed, and just write the header with a single entry
+	// adding the padding bytes
+	dataLength := len(dataToSave) - 12
+	remainder := dataLength % 8
+
+	if remainder > 0 {
+		paddingLength := 8 - remainder
+		bs2 := make([]byte, paddingLength)
+		dataToSave, err = binary.Append(dataToSave, binary.BigEndian, bs2)
+		if err != nil {
+			log.Fatal(err)
+			os.Exit(1)
+		}
+	}
+
+	// hash the content and append to the file
+	contentHash := sha1.New()
+	contentHash.Write(dataToSave)
+	dataToSave, err = binary.Append(dataToSave, binary.BigEndian, contentHash.Sum(nil))
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	// saving the file
+	if err = os.WriteFile(".git/index", dataToSave, 0666); err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
 	os.Exit(0)
+}
+
+func append4ByteBigEndianInteger(dataToSave []byte, i int64) ([]byte, error) {
+	return appendNByteBigEndianInteger(dataToSave, i, 4)
+}
+
+func appendNByteBigEndianInteger(dataToSave []byte, i int64, capacity int) ([]byte, error) {
+	bs2 := make([]byte, capacity)
+	binary.BigEndian.PutUint32(bs2, uint32(i))
+
+	dataToSave, err := binary.Append(dataToSave, binary.BigEndian, bs2)
+	if err != nil {
+		return nil, err
+	}
+
+	return dataToSave, nil
 }
