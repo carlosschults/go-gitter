@@ -251,7 +251,14 @@ func runUpdateIndexCommand(arguments []string) {
 	}
 
 	// filename bytes
-	dataToSave, err = binary.Append(dataToSave, binary.BigEndian, []byte(filePath+string(0)))
+	dataToSave, err = binary.Append(dataToSave, binary.BigEndian, []byte(filePath))
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	// null byte
+	dataToSave, err = binary.Append(dataToSave, binary.BigEndian, []byte{0})
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)

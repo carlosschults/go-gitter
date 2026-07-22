@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -53,4 +54,29 @@ func setupGitRepo(t *testing.T) string {
 		t.Fatalf("Command failed: %s", err)
 	}
 	return dir
+}
+
+func TestUpdateIndexAddSingleFile(t *testing.T) {
+	testRepoPath := setupGitRepo(t)
+	if err := os.WriteFile(filepath.Join(testRepoPath, "file.txt"), []byte("hello world"), 0666); err != nil {
+		t.Fatalf("Creating the test file failed: %s", err)
+	}
+
+	cmd := exec.Command(ggtBinaryPath, "update-index", "--add", "file.txt")
+	cmd.Dir = testRepoPath
+	_, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("Command failed: %s", err)
+	}
+
+	cmd = exec.Command("git", "ls-files")
+	cmd.Dir = testRepoPath
+	result, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("Command failed: %s", err)
+	}
+
+	if !strings.Contains(string(result), "file.txt") {
+		t.Fatalf("Test failed")
+	}
 }
